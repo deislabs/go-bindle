@@ -1,7 +1,9 @@
 package types
 
 import (
+	"fmt"
 	"path"
+	"strings"
 
 	"github.com/Masterminds/semver/v3"
 )
@@ -82,8 +84,8 @@ type Condition struct {
 	Requires []string
 }
 
-/// Group is a top-level organization object that may contain zero or more parcels. Every parcel
-/// belongs to at least one group, but may belong to others.
+// Group is a top-level organization object that may contain zero or more parcels. Every parcel
+// belongs to at least one group, but may belong to others.
 type Group struct {
 	Name        string
 	Required    *bool
@@ -95,4 +97,78 @@ type Group struct {
 type InvoiceCreateResponse struct {
 	Invoice Invoice
 	Missing []Label
+}
+
+// MissingParcelsResponse is a response to a missing parcels request. TOML doesn't support top level arrays, so they
+// must be embedded in a table
+type MissingParcelsResponse struct {
+	Missing []Label
+}
+
+// ErrorResponse is a string error message returned from the server
+type ErrorResponse struct {
+	Error string
+}
+
+// QueryOptions represents available options for the query API
+type QueryOptions struct {
+	// #[serde(alias = "q")]
+	Query *string
+	// #[serde(alias = "v")]
+	Version *string
+	// #[serde(alias = "o")]
+	Offset *uint64
+	// #[serde(alias = "l")]
+	Limit  *uint8
+	Strict *bool
+	Yanked *bool
+}
+
+// Returns a query string suitable to use in a URL
+func (q *QueryOptions) QueryString() string {
+	var pairs []string
+	if q.Query != nil {
+		pairs = append(pairs, fmt.Sprintf("q=%s", *q.Query))
+	}
+	if q.Version != nil {
+		pairs = append(pairs, fmt.Sprintf("v=%s", *q.Version))
+	}
+	if q.Offset != nil {
+		pairs = append(pairs, fmt.Sprintf("o=%d", q.Offset))
+	}
+	if q.Limit != nil {
+		pairs = append(pairs, fmt.Sprintf("l=%d", q.Limit))
+	}
+	if q.Strict != nil {
+		pairs = append(pairs, fmt.Sprintf("strict=%v", q.Strict))
+	}
+	if q.Yanked != nil {
+		pairs = append(pairs, fmt.Sprintf("yanked=%v", q.Yanked))
+	}
+
+	return "?" + strings.Join(pairs, "&")
+}
+
+// Matches describes the matches that are returned from a query
+type Matches struct {
+	// The query used to find this match set
+	Query string
+	// Whether the search engine used strict mode
+	Strict bool
+	// The offset of the first result in the matches
+	Offset uint64
+	// The maximum number of results this query would have returned
+	Limit uint8
+	// The total number of matches the search engine located
+	//
+	// In many cases, this will not match the number of results returned on this query
+	Total uint64
+	// Whether there are more results than the ones returned here
+	More bool
+	// Whether this list includes potentially yanked invoices
+	Yanked bool
+	// The list of invoices returned as this part of the query
+	//
+	// The length of this Vec will be less than or equal to the limit.
+	Invoices []Invoice
 }
