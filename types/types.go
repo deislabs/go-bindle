@@ -2,33 +2,8 @@ package types
 
 import (
 	"fmt"
-	"path"
 	"strings"
-
-	"github.com/Masterminds/semver/v3"
 )
-
-// ID represents the canonical ID of a Bindle
-type ID struct {
-	name    string
-	version semver.Version
-}
-
-// ParseID takes a raw string and attempts to parse it as an `ID`. A valid Bindle ID is an
-// arbitrarily pathy name (e.g. example.com/foo/bar) and a strict semver version (e.g. 1.0.0) in the
-// format "example.com/foo/bar/1.0.0"
-func ParseID(raw string) (ID, error) {
-	name := path.Dir(raw)
-	version, err := semver.StrictNewVersion(path.Base(raw))
-	if err != nil {
-		return ID{}, err
-	}
-	return ID{name, *version}, nil
-}
-
-func (i ID) String() string {
-	return path.Join(i.name, i.version.String())
-}
 
 // Invoice is the main structure for a Bindle invoice.
 //
@@ -39,20 +14,28 @@ func (i ID) String() string {
 // Most fields on this struct are singular to best represent the specification. There, fields like
 // `group` and `parcel` are singular due to the conventions of TOML.
 type Invoice struct {
-	BindleVersion string
-	Yanked        *bool
-	Bindle        BindleSpec
-	Annotations   map[string]string
-	Parcel        []Parcel
-	Group         []Group
+	BindleVersion string            `toml:"bindleVersion"`
+	Yanked        *bool             `toml:"yanked"`
+	Bindle        BindleSpec        `toml:"bindle"`
+	Annotations   map[string]string `toml:"annotations,omitempty"`
+	Parcel        []Parcel          `toml:"parcel,omitempty"`
+	Group         []Group           `toml:"group,omitempty"`
 }
+
+// Name returns the full name of the bindle (name + version)
+func (i Invoice) Name() string {
+	return fmt.Sprintf("%s/%s", i.Bindle.Name, i.Bindle.Version)
+}
+
+// NOTE: I tried to create an embedded ID type as we do in Rust so we can validate semver, but the
+// TOML library isn't flexible enough to flatten the data
 
 // BindleSpec contains the data to identify a bindle as well as additional metadata describing it
 type BindleSpec struct {
-	// TODO: Figure out how to flatten this to name/version
-	ID          ID
-	Description *string
-	Authors     []string
+	Name        string   `toml:"name"`
+	Version     string   `toml:"version"`
+	Description *string  `toml:"description"`
+	Authors     []string `toml:"authors,omitempty"`
 }
 
 // Parcel is a description of a stored parcel file
@@ -61,8 +44,8 @@ type BindleSpec struct {
 // object contains the metadata and associated conditions for using a parcel. For more information,
 // see the [Bindle Spec](https://github.com/deislabs/bindle/blob/master/docs/bindle-spec.md)
 type Parcel struct {
-	Label      Label
-	Conditions *Condition
+	Label      Label      `toml:"label"`
+	Conditions *Condition `toml:"conditions"`
 }
 
 // Label is the metadata of a stored parcel
@@ -70,58 +53,54 @@ type Parcel struct {
 // See the [Label Spec](https://github.com/deislabs/bindle/blob/master/docs/label-spec.md) for more
 // detailed information
 type Label struct {
-	SHA256      string
-	MediaType   string
-	Name        string
-	Size        uint64
-	Annotations map[string]string
-	Feature     map[string]map[string]string
+	SHA256      string                       `toml:"sha256"`
+	MediaType   string                       `toml:"mediaType"`
+	Name        string                       `toml:"name"`
+	Size        uint64                       `toml:"size"`
+	Annotations map[string]string            `toml:"annotations,omitempty"`
+	Feature     map[string]map[string]string `toml:"feature,omitempty"`
 }
 
 /// Condition associate parcels to `Group`s
 type Condition struct {
-	MemberOf []string
-	Requires []string
+	MemberOf []string `toml:"memberOf,omitempty"`
+	Requires []string `toml:"requires,omitempty"`
 }
 
 // Group is a top-level organization object that may contain zero or more parcels. Every parcel
 // belongs to at least one group, but may belong to others.
 type Group struct {
-	Name        string
-	Required    *bool
-	SatisfiedBy *string
+	Name        string  `toml:"name"`
+	Required    *bool   `toml:"required"`
+	SatisfiedBy *string `toml:"satisfiedBy"`
 }
 
 // InvoiceCreateResponse is returned by a Bindle server when creating an invoice. It contains the
 // created invoice and an optional slice of labels indicating which parcels are missing in storage
 type InvoiceCreateResponse struct {
-	Invoice Invoice
-	Missing []Label
+	Invoice Invoice `toml:"invoice"`
+	Missing []Label `toml:"missing,omitempty"`
 }
 
 // MissingParcelsResponse is a response to a missing parcels request. TOML doesn't support top level arrays, so they
 // must be embedded in a table
 type MissingParcelsResponse struct {
-	Missing []Label
+	Missing []Label `toml:"missing"`
 }
 
 // ErrorResponse is a string error message returned from the server
 type ErrorResponse struct {
-	Error string
+	Error string `toml:"error"`
 }
 
 // QueryOptions represents available options for the query API
 type QueryOptions struct {
-	// #[serde(alias = "q")]
-	Query *string
-	// #[serde(alias = "v")]
-	Version *string
-	// #[serde(alias = "o")]
-	Offset *uint64
-	// #[serde(alias = "l")]
-	Limit  *uint8
-	Strict *bool
-	Yanked *bool
+	Query   *string `toml:"q"`
+	Version *string `toml:"v"`
+	Offset  *uint64 `toml:"o"`
+	Limit   *uint8  `toml:"l"`
+	Strict  *bool   `toml:"strict"`
+	Yanked  *bool   `toml:"yanked"`
 }
 
 // Returns a query string suitable to use in a URL
@@ -152,23 +131,23 @@ func (q *QueryOptions) QueryString() string {
 // Matches describes the matches that are returned from a query
 type Matches struct {
 	// The query used to find this match set
-	Query string
+	Query string `toml:"query"`
 	// Whether the search engine used strict mode
-	Strict bool
+	Strict bool `toml:"strict"`
 	// The offset of the first result in the matches
-	Offset uint64
+	Offset uint64 `toml:"offset"`
 	// The maximum number of results this query would have returned
-	Limit uint8
+	Limit uint8 `toml:"limit"`
 	// The total number of matches the search engine located
 	//
 	// In many cases, this will not match the number of results returned on this query
-	Total uint64
+	Total uint64 `toml:"total"`
 	// Whether there are more results than the ones returned here
-	More bool
+	More bool `toml:"more"`
 	// Whether this list includes potentially yanked invoices
-	Yanked bool
+	Yanked bool `toml:"yanked"`
 	// The list of invoices returned as this part of the query
 	//
 	// The length of this Vec will be less than or equal to the limit.
-	Invoices []Invoice
+	Invoices []Invoice `toml:"invoices"`
 }

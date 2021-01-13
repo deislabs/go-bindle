@@ -2,12 +2,14 @@ package client
 
 import (
 	"bytes"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 
 	"github.com/deislabs/go-bindle/types"
 
@@ -18,20 +20,25 @@ import (
 const invoiceEndpoint = "_i"
 const queryEndpoint = "_q"
 const relationshipEndpoint = "_r"
+const tomlMimeType = "application/toml"
 
 type Client struct {
 	httpClient http.Client
 	baseURL    *url.URL
 }
 
-func New(baseURL string) (*Client, error) {
+func New(baseURL string, tlsConfig *tls.Config) (*Client, error) {
 	httpClient := http.Client{
 		Transport: &http2.Transport{
-			AllowHTTP: true,
+			AllowHTTP:       true,
+			TLSClientConfig: tlsConfig,
 		},
 	}
+
+	// Strip any trailing slashes first
+	stripped := strings.TrimSuffix(baseURL, "/")
 	// Validate the baseURL
-	u, err := url.Parse(baseURL)
+	u, err := url.Parse(stripped)
 	if err != nil {
 		return nil, fmt.Errorf("Invalid base URL: %s", err)
 	}
@@ -42,22 +49,31 @@ func New(baseURL string) (*Client, error) {
 }
 
 // RawRequests performs an HTTP request using the underlying HTTP client and base URL. The given
-// path is appended to the URL and the data body is optional
-func (c *Client) RawRequest(path string, method string, data io.ReadCloser) (*http.Response, error) {
-	u, err := c.baseURL.Parse(path)
+// path is appended to the URL and the data body is optional. If a body is specified, the
+// content-type can be specified as well
+func (c *Client) RawRequest(path string, method string, data io.ReadCloser, contentType string) (*http.Response, error) {
+	u := *c.baseURL
+	// Parse as a URL so we can get the separate components
+	parsedPath, err := url.Parse(path)
 	if err != nil {
 		return nil, err
 	}
+	u.Path = u.Path + parsedPath.Path
+	u.RawQuery = parsedPath.RawQuery
+
 	req := &http.Request{
 		Method: method,
-		URL:    u,
+		URL:    &u,
 		Body:   data,
+		Header: http.Header{
+			"Content-Type": []string{contentType},
+		},
 	}
 	return c.httpClient.Do(req)
 }
 
-func (c *Client) requestAndUnmarshal(path string, method string, data io.ReadCloser, v interface{}) error {
-	resp, err := c.RawRequest(path, method, data)
+func (c *Client) requestAndUnmarshal(path string, method string, data io.ReadCloser, contentType string, v interface{}) error {
+	resp, err := c.RawRequest(path, method, data, contentType)
 	if err != nil {
 		return err
 	}
@@ -69,7 +85,7 @@ func (c *Client) requestAndUnmarshal(path string, method string, data io.ReadClo
 
 func (c *Client) GetInvoice(id string) (*types.Invoice, error) {
 	var inv types.Invoice
-	if err := c.requestAndUnmarshal(fmt.Sprintf("/%s/%s", invoiceEndpoint, id), http.MethodGet, nil, &inv); err != nil {
+	if err := c.requestAndUnmarshal(fmt.Sprintf("/%s/%s", invoiceEndpoint, id), http.MethodGet, nil, "", &inv); err != nil {
 		return nil, err
 	}
 	return &inv, nil
@@ -77,7 +93,7 @@ func (c *Client) GetInvoice(id string) (*types.Invoice, error) {
 
 func (c *Client) GetYankedInvoice(id string) (*types.Invoice, error) {
 	var inv types.Invoice
-	if err := c.requestAndUnmarshal(fmt.Sprintf("/%s/%s?yanked=true", invoiceEndpoint, id), http.MethodGet, nil, &inv); err != nil {
+	if err := c.requestAndUnmarshal(fmt.Sprintf("/%s/%s?yanked=true", invoiceEndpoint, id), http.MethodGet, nil, "", &inv); err != nil {
 		return nil, err
 	}
 	return &inv, nil
@@ -90,7 +106,7 @@ func (c *Client) CreateInvoice(inv types.Invoice) (*types.InvoiceCreateResponse,
 	}
 
 	var invResp types.InvoiceCreateResponse
-	if err := c.requestAndUnmarshal(fmt.Sprintf("/%s", invoiceEndpoint), http.MethodPost, body, &invResp); err != nil {
+	if err := c.requestAndUnmarshal(fmt.Sprintf("/%s", invoiceEndpoint), http.MethodPost, body, tomlMimeType, &invResp); err != nil {
 		return nil, err
 	}
 
@@ -105,7 +121,7 @@ func (c *Client) CreateInvoiceFromFile(path string) (*types.InvoiceCreateRespons
 	defer body.Close()
 
 	var invResp types.InvoiceCreateResponse
-	if err := c.requestAndUnmarshal(fmt.Sprintf("/%s", invoiceEndpoint), http.MethodPost, body, &invResp); err != nil {
+	if err := c.requestAndUnmarshal(fmt.Sprintf("/%s", invoiceEndpoint), http.MethodPost, body, tomlMimeType, &invResp); err != nil {
 		return nil, err
 	}
 	return &invResp, nil
@@ -113,14 +129,14 @@ func (c *Client) CreateInvoiceFromFile(path string) (*types.InvoiceCreateRespons
 
 func (c *Client) QueryInvoices(opts types.QueryOptions) (*types.Matches, error) {
 	var matches types.Matches
-	if err := c.requestAndUnmarshal(fmt.Sprintf("/%s%s", queryEndpoint, opts.QueryString()), http.MethodGet, nil, &matches); err != nil {
+	if err := c.requestAndUnmarshal(fmt.Sprintf("/%s%s", queryEndpoint, opts.QueryString()), http.MethodGet, nil, tomlMimeType, &matches); err != nil {
 		return nil, err
 	}
 	return &matches, nil
 }
 
 func (c *Client) YankInvoice(id string) error {
-	if err := c.requestAndUnmarshal(fmt.Sprintf("/%s/%s", invoiceEndpoint, id), http.MethodDelete, nil, nil); err != nil {
+	if err := c.requestAndUnmarshal(fmt.Sprintf("/%s/%s", invoiceEndpoint, id), http.MethodDelete, nil, "", nil); err != nil {
 		return err
 	}
 	return nil
@@ -128,7 +144,7 @@ func (c *Client) YankInvoice(id string) error {
 
 // Performs the request against the parcel endpoint and handles any http errors, returning the HTTP body
 func (c *Client) doParcelRequest(bindleID string, sha string, method string, body io.ReadCloser) (io.ReadCloser, error) {
-	resp, err := c.RawRequest(fmt.Sprintf("/%s/%s@%s", invoiceEndpoint, bindleID, sha), method, body)
+	resp, err := c.RawRequest(fmt.Sprintf("/%s/%s@%s", invoiceEndpoint, bindleID, sha), method, body, "")
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +193,7 @@ func (c *Client) CreateParcelFromReader(bindleID string, sha string, data io.Rea
 
 func (c *Client) GetMissingParcels(id string) (*types.MissingParcelsResponse, error) {
 	var missing types.MissingParcelsResponse
-	if err := c.requestAndUnmarshal(fmt.Sprintf("/%s/missing/%s", relationshipEndpoint, id), http.MethodGet, nil, &missing); err != nil {
+	if err := c.requestAndUnmarshal(fmt.Sprintf("/%s/missing/%s", relationshipEndpoint, id), http.MethodGet, nil, "", &missing); err != nil {
 		return nil, err
 	}
 	return &missing, nil
