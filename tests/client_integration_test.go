@@ -119,8 +119,9 @@ func newTestController(t *testing.T) testController {
 	}
 }
 
-// Because the http2 support in Go doesn't seem to allow you to use http with http2, we need a pair
-// of certs to use for testing. Copied and modified from https://gist.github.com/samuel/8b500ddd3f6118d052b5e6bc16bc4c09
+// Because the http2 support in Go doesn't seem to allow you to use http with http2 without a bunch
+// of config things that only apply here, we need a pair of certs to use for testing. Copied and
+// modified from https://gist.github.com/samuel/8b500ddd3f6118d052b5e6bc16bc4c09
 func generateSelfSignedCert() (keyPath string, certPath string) {
 	tempdir, err := ioutil.TempDir("", "*")
 	if err != nil {
@@ -254,13 +255,82 @@ func TestSuccessful(t *testing.T) {
 }
 
 func TestStreamingSuccessful(t *testing.T) {
+	controller := newTestController(t)
 
+	// First try creating an invoice
+	resp, err := controller.Client.CreateInvoiceFromFile(scaffold_invoice_path("valid_v1"))
+	if err != nil {
+		t.Fatalf("Unable to create invoice: %s", err)
+	}
+
+	inv := resp.Invoice
+
+	// Now create the parcel associated with that invoice
+	data := load_scaffold_parcel_data(t, "valid_v1", "parcel")
+	if err := controller.Client.CreateParcelFromFile(inv.Name(), inv.Parcel[0].Label.SHA256, scaffold_parcel_path("valid_v1", "parcel")); err != nil {
+		t.Fatalf("Unable to create parcel: %s", err)
+	}
+
+	// Now see if we get the parcel back from the server
+	serverData, err := controller.Client.GetParcel(inv.Name(), inv.Parcel[0].Label.SHA256)
+	if err != nil {
+		t.Fatalf("Unable to fetch parcel from server: %s", err)
+	}
+
+	if !reflect.DeepEqual(data, serverData) {
+		t.Fatalf("Did not get back valid data from the server\nExpected: %s\nGot: %s", data, serverData)
+	}
 }
 
 func TestAlreadyCreated(t *testing.T) {
+	controller := newTestController(t)
 
+	// Create an invoice with two parcels
+	inv := load_scaffold_invoice(t, "valid_v2")
+	_, err := controller.Client.CreateInvoice(inv)
+	if err != nil {
+		t.Fatalf("Unable to create invoice: %s", err)
+	}
+
+	// Now create the parcels associated with that invoice
+	data := load_scaffold_parcel_data(t, "valid_v2", "other")
+	if err := controller.Client.CreateParcel(inv.Name(), inv.Parcel[0].Label.SHA256, data); err != nil {
+		t.Fatalf("Unable to create parcel: %s", err)
+	}
+
+	data = load_scaffold_parcel_data(t, "valid_v2", "parcel")
+	if err := controller.Client.CreateParcel(inv.Name(), inv.Parcel[1].Label.SHA256, data); err != nil {
+		t.Fatalf("Unable to create parcel: %s", err)
+	}
+
+	// Now create another invoice that already has all parcels existing
+	inv = load_scaffold_invoice(t, "valid_v1")
+	resp, err := controller.Client.CreateInvoice(inv)
+	if err != nil {
+		t.Fatalf("Unable to create invoice: %s", err)
+	}
+
+	if resp.Missing != nil {
+		t.Fatalf("Should have no missing parcels")
+	}
 }
 
 func TestMissing(t *testing.T) {
+	controller := newTestController(t)
 
+	// Create an invoice with two parcels
+	inv := load_scaffold_invoice(t, "valid_v2")
+	_, err := controller.Client.CreateInvoice(inv)
+	if err != nil {
+		t.Fatalf("Unable to create invoice: %s", err)
+	}
+
+	missing, err := controller.Client.GetMissingParcels(inv.Name())
+	if err != nil {
+		t.Fatalf("Should have been able to get missing parcels: %s", err)
+	}
+
+	if len(missing.Missing) != len(inv.Parcel) {
+		t.Fatalf("Expected to get %d missing parcels, got %d", len(inv.Parcel), len(missing.Missing))
+	}
 }
