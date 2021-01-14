@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      matrix:
+        config:
+          - { os: "ubuntu-latest", os_name: "ubuntu", extension: "" }
+          - { os: "macos-latest", os_name: "macos", extension: "" }
+          - { os: "windows-latest", os_name: "windows", extension: ".exe" }
+
+    steps:
+      - uses: actions/checkout@v2
+      - uses: engineerd/configurator@v0.0.5
+        with:
+          name: bindle-server
+          # Right now we are using canary builds, but once we get to a stable state on bindle, we
+          # can pin to a specific version
+          url: https://bindle.blob.core.windows.net/releases/bindle-canary-${{ matrix.config.os_name }}-amd64.tar.gz
+          pathInArchive: bindle-server${{ matrix.config.extension }}
+      - name: Build
+        run: go build
+      - name: Run tests
+        run: go test ./...
