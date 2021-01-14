@@ -22,11 +22,18 @@ const queryEndpoint = "_q"
 const relationshipEndpoint = "_r"
 const tomlMimeType = "application/toml"
 
+// Client is the struct that contains all necessary information for communicating with a Bindle
+// Server
 type Client struct {
 	httpClient http.Client
 	baseURL    *url.URL
 }
 
+// New returns a new Client configured to use the given baseURL. This URL should be the entire base
+// part of your Bindle server. So if your Bindle server is namespaced (with something like v1), then
+// the baseURL should contain that part of the URL (e.g. https://bindle.example.com/v1 instead of
+// https://bindle.example.com). The tlsConfig parameter is optional and can be used if you have any
+// specific TLS configuration options such as internally signed certificates
 func New(baseURL string, tlsConfig *tls.Config) (*Client, error) {
 	httpClient := http.Client{
 		Transport: &http2.Transport{
@@ -50,7 +57,7 @@ func New(baseURL string, tlsConfig *tls.Config) (*Client, error) {
 
 // RawRequests performs an HTTP request using the underlying HTTP client and base URL. The given
 // path is appended to the URL and the data body is optional. If a body is specified, the
-// content-type can be specified as well
+// contentType can be specified as well, otherwise contentType will be ignored
 func (c *Client) RawRequest(path string, method string, data io.ReadCloser, contentType string) (*http.Response, error) {
 	u := *c.baseURL
 	// Parse as a URL so we can get the separate components
@@ -83,6 +90,8 @@ func (c *Client) requestAndUnmarshal(path string, method string, data io.ReadClo
 	return nil
 }
 
+// GetInvoice returns an `Invoice` with the given ID. This will return an error if the invoice is
+// yanked
 func (c *Client) GetInvoice(id string) (*types.Invoice, error) {
 	var inv types.Invoice
 	if err := c.requestAndUnmarshal(fmt.Sprintf("/%s/%s", invoiceEndpoint, id), http.MethodGet, nil, "", &inv); err != nil {
@@ -91,6 +100,8 @@ func (c *Client) GetInvoice(id string) (*types.Invoice, error) {
 	return &inv, nil
 }
 
+// GetYankedInvoice is the same as `GetInvoice`, but allows you to return an invoice that has been
+// yanked
 func (c *Client) GetYankedInvoice(id string) (*types.Invoice, error) {
 	var inv types.Invoice
 	if err := c.requestAndUnmarshal(fmt.Sprintf("/%s/%s?yanked=true", invoiceEndpoint, id), http.MethodGet, nil, "", &inv); err != nil {
@@ -99,6 +110,8 @@ func (c *Client) GetYankedInvoice(id string) (*types.Invoice, error) {
 	return &inv, nil
 }
 
+// CreateInvoice from the given `Invoice` object. Returns a response containing the newly created
+// invoice and a list of any missing parcels that need to be uploaded
 func (c *Client) CreateInvoice(inv types.Invoice) (*types.InvoiceCreateResponse, error) {
 	body, err := encodeToBuffer(&inv)
 	if err != nil {
@@ -113,6 +126,8 @@ func (c *Client) CreateInvoice(inv types.Invoice) (*types.InvoiceCreateResponse,
 	return &invResp, nil
 }
 
+// CreateInvoiceFromFile is the same as `CreateInvoice`, but instead takes a path to an invoice TOML
+// file to send to the server
 func (c *Client) CreateInvoiceFromFile(path string) (*types.InvoiceCreateResponse, error) {
 	body, err := os.Open(path)
 	if err != nil {
@@ -127,6 +142,10 @@ func (c *Client) CreateInvoiceFromFile(path string) (*types.InvoiceCreateRespons
 	return &invResp, nil
 }
 
+// QueryInvoices allows you to search and filter invoices from the Bindle server. Bindle servers are
+// allowed to implement their query engines differently, so the number of matches may vary depending
+// on the server, particularly in their use of `strict` mode. Returns a `Matches` object containing
+// information about the query, pagination data, and the list of responses
 func (c *Client) QueryInvoices(opts types.QueryOptions) (*types.Matches, error) {
 	var matches types.Matches
 	if err := c.requestAndUnmarshal(fmt.Sprintf("/%s%s", queryEndpoint, opts.QueryString()), http.MethodGet, nil, tomlMimeType, &matches); err != nil {
@@ -135,6 +154,9 @@ func (c *Client) QueryInvoices(opts types.QueryOptions) (*types.Matches, error) 
 	return &matches, nil
 }
 
+// YankInvoice allows you to "yank," or mark as no longer available, an invoice of the given ID.
+// Invoices cannot be deleted from a Bindle server, so this notifies users that it should not be
+// consumed
 func (c *Client) YankInvoice(id string) error {
 	if err := c.requestAndUnmarshal(fmt.Sprintf("/%s/%s", invoiceEndpoint, id), http.MethodDelete, nil, "", nil); err != nil {
 		return err
@@ -155,6 +177,9 @@ func (c *Client) doParcelRequest(bindleID string, sha string, method string, bod
 	return resp.Body, nil
 }
 
+// GetParcel returns the parcel identified by the Bindle ID and parcel SHA. This loads the data into
+// memory as a byte array and is not recommended for use with larger parcels. For larger parcels (or
+// when writing directly to another source), use the `GetParcelReader` function instead
 func (c *Client) GetParcel(bindleID string, sha string) ([]byte, error) {
 	body, err := c.doParcelRequest(bindleID, sha, http.MethodGet, nil)
 	if err != nil {
@@ -165,17 +190,27 @@ func (c *Client) GetParcel(bindleID string, sha string) ([]byte, error) {
 	return ioutil.ReadAll(body)
 }
 
-// Returns the parcel as a reader (for streaming purposes). This will be more efficient for larger
-// files
+// GetParcelReader is similar to `GetParcel` but returns the parcel as a reader (for streaming
+// purposes). This will be more efficient for larger files
 func (c *Client) GetParcelReader(bindleID string, sha string) (io.ReadCloser, error) {
 	return c.doParcelRequest(bindleID, sha, http.MethodGet, nil)
 }
 
+// CreateParcel uploads a parcel for the given `bindleID`. The `sha` value must match the SHA256 sum
+// of the data or the server will reject the parcel. This function takes the parcel data as a raw
+// byte array. For larger parcels, it is recommended to use `CreateParcelFromFile` or
+// `CreateParcelFromReader` to avoid loading them into memory.
+//
+// Please note that for best efficiency, consumers should only upload parcels that do not already
+// exist as indicated by the server (either in the `InvoiceCreateResponse` or by using the
+// `GetMissingParcels` function)
 func (c *Client) CreateParcel(bindleID string, sha string, data []byte) error {
 	_, err := c.doParcelRequest(bindleID, sha, http.MethodPost, ioutil.NopCloser(bytes.NewReader(data)))
 	return err
 }
 
+// CreateParcelFromFile is the same as `CreateParcel` but takes a path to a file to upload for a
+// parcel. This file will be streamed to the server and not loaded into memory
 func (c *Client) CreateParcelFromFile(bindleID string, sha string, path string) error {
 	file, err := os.Open(path)
 	if err != nil {
@@ -186,11 +221,17 @@ func (c *Client) CreateParcelFromFile(bindleID string, sha string, path string) 
 	return err
 }
 
+// CreateParcelFromReader is the same as `CreateParcel` but takes anything that is a `ReadCloser` to
+// use for the parcel. This function will stream the data from the reader to the server and then
+// close the reader
 func (c *Client) CreateParcelFromReader(bindleID string, sha string, data io.ReadCloser) error {
 	_, err := c.doParcelRequest(bindleID, sha, http.MethodPost, data)
+	defer data.Close()
 	return err
 }
 
+// GetMissingParcels checks with the server if there are any missing parcels for the given Bindle
+// ID. Returns a response containing the list of missing parcels, if any
 func (c *Client) GetMissingParcels(id string) (*types.MissingParcelsResponse, error) {
 	var missing types.MissingParcelsResponse
 	if err := c.requestAndUnmarshal(fmt.Sprintf("/%s/missing/%s", relationshipEndpoint, id), http.MethodGet, nil, "", &missing); err != nil {
