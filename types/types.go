@@ -1,3 +1,4 @@
+// Package types contains type defintions for all Bindle API objects
 package types
 
 import (
@@ -5,11 +6,9 @@ import (
 	"strings"
 )
 
-// Invoice is the main structure for a Bindle invoice.
-//
-// The invoice describes a specific version of a bindle. For example, the bindle `foo/bar/1.0.0`
-// would be represented as an Invoice with the `BindleSpec` name set to `foo/bar` and version set to
-// `1.0.0`.
+// Invoice is the main structure for a Bindle invoice. The invoice describes a specific version of a
+// bindle. For example, the bindle `foo/bar/1.0.0` would be represented as an Invoice with the
+// `BindleSpec` name set to `foo/bar` and version set to `1.0.0`.
 //
 // Most fields on this struct are singular to best represent the specification. There, fields like
 // `group` and `parcel` are singular due to the conventions of TOML.
@@ -38,20 +37,17 @@ type BindleSpec struct {
 	Authors     []string `toml:"authors,omitempty"`
 }
 
-// Parcel is a description of a stored parcel file
-//
-// A parcel file can be an arbitrary "blob" of data. This could be binary or text files. This
-// object contains the metadata and associated conditions for using a parcel. For more information,
-// see the [Bindle Spec](https://github.com/deislabs/bindle/blob/master/docs/bindle-spec.md)
+// Parcel is a description of a stored parcel file. A parcel file can be an arbitrary "blob" of
+// data. This could be binary or text files. This object contains the metadata and associated
+// conditions for using a parcel. For more information, see the Bindle Spec:
+// https://github.com/deislabs/bindle/blob/master/docs/bindle-spec.md
 type Parcel struct {
 	Label      Label      `toml:"label"`
 	Conditions *Condition `toml:"conditions"`
 }
 
-// Label is the metadata of a stored parcel
-//
-// See the [Label Spec](https://github.com/deislabs/bindle/blob/master/docs/label-spec.md) for more
-// detailed information
+// Label is the metadata of a stored parcel. See the Label Spec for more detailed information:
+// https://github.com/deislabs/bindle/blob/master/docs/label-spec.md
 type Label struct {
 	SHA256      string                       `toml:"sha256"`
 	MediaType   string                       `toml:"mediaType"`
@@ -61,7 +57,7 @@ type Label struct {
 	Feature     map[string]map[string]string `toml:"feature,omitempty"`
 }
 
-/// Condition associate parcels to `Group`s
+/// Condition is used to associate parcels to `Group`s
 type Condition struct {
 	MemberOf []string `toml:"memberOf,omitempty"`
 	Requires []string `toml:"requires,omitempty"`
@@ -103,7 +99,8 @@ type QueryOptions struct {
 	Yanked  *bool   `toml:"yanked"`
 }
 
-// Returns a query string suitable to use in a URL
+// QueryString returns a query string suitable for use in a URL (including the starting `?`) using
+// the configured parameters of a `QueryOptions`
 func (q *QueryOptions) QueryString() string {
 	var pairs []string
 	if q.Query != nil {
