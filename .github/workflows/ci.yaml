@@ -11,7 +11,7 @@ jobs:
     strategy:
       matrix:
         config:
-          - { os: "ubuntu-latest", os_name: "ubuntu", extension: "" }
+          - { os: "ubuntu-latest", os_name: "linux", extension: "" }
           - { os: "macos-latest", os_name: "macos", extension: "" }
           - { os: "windows-latest", os_name: "windows", extension: ".exe" }
 
