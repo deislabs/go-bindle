@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v2
       - uses: engineerd/configurator@v0.0.5
         with:
-          name: bindle-server
+          name: bindle-server${{ matrix.config.extension }}
           # Right now we are using canary builds, but once we get to a stable state on bindle, we
           # can pin to a specific version
           url: https://bindle.blob.core.windows.net/releases/bindle-canary-${{ matrix.config.os_name }}-amd64.tar.gz
