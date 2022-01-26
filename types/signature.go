@@ -4,7 +4,6 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
-	"fmt"
 	"strings"
 	"time"
 )
@@ -26,8 +25,6 @@ func (i *Invoice) GenerateCreatorSignature() error {
 	timestamp := time.Now()
 
 	cleartext := i.generateCleartext("creator", timestamp)
-
-	fmt.Println("generated cleartext", cleartext)
 
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -60,7 +57,6 @@ func (i *Invoice) generateCleartext(role string, timestamp time.Time) string {
 		i.Bindle.Name,
 		i.Bindle.Version,
 		role,
-		fmt.Sprintf("%d", timestamp.Unix()),
 		"~",
 	}
 
