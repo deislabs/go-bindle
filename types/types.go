@@ -82,6 +82,20 @@ type Signature struct {
 	At        int64  `toml:"at"`
 }
 
+// Keyring represents a list of available public keys for signature validation
+type Keyring struct {
+	Version string         `toml:"version"`
+	Key     []SignatureKey `toml:"key"`
+}
+
+// SignatureKey is a representation of a public key used to validate signatures
+type SignatureKey struct {
+	Label          string   `toml:"label"`
+	Roles          []string `toml:"roles"`
+	Key            string   `toml:"key"`
+	LabelSignature string   `toml:"labelSignature"`
+}
+
 // InvoiceCreateResponse is returned by a Bindle server when creating an invoice. It contains the
 // created invoice and an optional slice of labels indicating which parcels are missing in storage
 type InvoiceCreateResponse struct {
