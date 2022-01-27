@@ -1,6 +1,9 @@
 package keyring
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/base64"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -8,6 +11,28 @@ import (
 	"github.com/deislabs/go-bindle/types"
 	"github.com/pelletier/go-toml"
 )
+
+// GenerateSigningKey generates a keypair for signing Bindle invoices
+// The return types are the public key (wrapped in a SignatureKey), the private key, and any error
+func GenerateSignatureKey(author, role string) (*types.SignatureKey, []byte, error) {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	pubString := base64.StdEncoding.EncodeToString(pub)
+
+	labelSig := ed25519.Sign(priv, []byte(author))
+
+	sigKey := &types.SignatureKey{
+		Label:          author,
+		Roles:          []string{role},
+		Key:            pubString,
+		LabelSignature: string(labelSig),
+	}
+
+	return sigKey, priv, nil
+}
 
 // Localkeyring returns the keyring stored on your local machine
 func LocalKeyring() (*types.Keyring, error) {
@@ -30,7 +55,12 @@ func LocalKeyring() (*types.Keyring, error) {
 func AddLocalKey(key *types.SignatureKey) error {
 	keyring, err := LocalKeyring()
 	if err != nil {
-		return err
+		// nothing to be done, create a new one
+
+		keyring = &types.Keyring{
+			Version: "1.0.0",
+			Key:     []types.SignatureKey{},
+		}
 	}
 
 	keyring.Key = append(keyring.Key, *key)
@@ -40,7 +70,7 @@ func AddLocalKey(key *types.SignatureKey) error {
 		return err
 	}
 
-	// overwrite the file
+	// overwrite the file if it exists
 	if err := os.WriteFile(keyringFilepath(), keyringBytes, fs.FileMode(os.O_RDWR)); err != nil {
 		return err
 	}
@@ -48,18 +78,39 @@ func AddLocalKey(key *types.SignatureKey) error {
 	return nil
 }
 
+// WritePrivKey writes a private key (encoded to base64) to the provided filepath
+func WritePrivKey(privKey []byte, filepath string) error {
+	keyString := base64.StdEncoding.EncodeToString(privKey)
+
+	if err := os.WriteFile(filepath, []byte(keyString), 0600); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// ReadPrivKey reads a private key from a file and returns its raw bytes
+func ReadPrivKey(filepath string) ([]byte, error) {
+	keyBytes, err := os.ReadFile(filepath)
+	if err != nil {
+		return nil, err
+	}
+
+	return base64.StdEncoding.DecodeString(string(keyBytes))
+}
+
 func keyringFilepath() string {
 	base := ""
 
 	xdg, exists := os.LookupEnv("XDG_CONFIG")
 	if exists {
-		base = xdg
+		base = filepath.Join(xdg, "bindle")
 	} else {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			base = "$HOME"
+			base = filepath.Join("$HOME", ".bindle")
 		} else {
-			base = home
+			base = filepath.Join(home, ".bindle")
 		}
 	}
 

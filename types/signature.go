@@ -2,7 +2,6 @@ package types
 
 import (
 	"crypto/ed25519"
-	"crypto/rand"
 	"encoding/base64"
 	"strings"
 	"time"
@@ -21,22 +20,23 @@ import (
 
 // GenerateCreatorSignature generates a signature for the creator using the first 'author'
 // in the Invoice, and then appends the new signature to the Invoice's 'Signature' list.
-func (i *Invoice) GenerateCreatorSignature() error {
+// Use keyring.GenerateSignatureKey to create a keypair
+func (i *Invoice) GenerateCreatorSignature(sigKey *SignatureKey, privKey []byte) error {
 	timestamp := time.Now()
 
 	cleartext := i.generateCleartext("creator", timestamp)
 
-	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	sig := ed25519.Sign(privKey, []byte(cleartext))
+
+	pubKey, err := base64.StdEncoding.DecodeString(sigKey.Key)
 	if err != nil {
 		return err
 	}
 
-	sig := ed25519.Sign(priv, []byte(cleartext))
-
 	signature := Signature{
 		By:        i.Bindle.Authors[0],
 		Signature: base64.StdEncoding.EncodeToString(sig),
-		Key:       base64.StdEncoding.EncodeToString(pub),
+		Key:       base64.StdEncoding.EncodeToString(pubKey),
 		Role:      "creator",
 		At:        timestamp.Unix(),
 	}
