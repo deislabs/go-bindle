@@ -4,7 +4,6 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
-	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -23,12 +22,13 @@ func GenerateSignatureKey(author, role string) (*types.SignatureKey, []byte, err
 	pubString := base64.StdEncoding.EncodeToString(pub)
 
 	labelSig := ed25519.Sign(priv, []byte(author))
+	sigString := base64.StdEncoding.EncodeToString(labelSig)
 
 	sigKey := &types.SignatureKey{
 		Label:          author,
 		Roles:          []string{role},
 		Key:            pubString,
-		LabelSignature: string(labelSig),
+		LabelSignature: sigString,
 	}
 
 	return sigKey, priv, nil
@@ -71,7 +71,7 @@ func AddLocalKey(key *types.SignatureKey) error {
 	}
 
 	// overwrite the file if it exists
-	if err := os.WriteFile(keyringFilepath(), keyringBytes, fs.FileMode(os.O_RDWR)); err != nil {
+	if err := os.WriteFile(keyringFilepath(), keyringBytes, 0600); err != nil {
 		return err
 	}
 
