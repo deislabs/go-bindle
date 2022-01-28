@@ -14,6 +14,10 @@ import (
 // GenerateSigningKey generates a keypair for signing Bindle invoices
 // The return types are the public key (wrapped in a SignatureKey), the private key, and any error
 func GenerateSignatureKey(author, role string) (*types.SignatureKey, []byte, error) {
+	if exists, val := types.ValidRoles[role]; !exists || !val {
+		return nil, nil, types.ErrInvalidRole
+	}
+
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		return nil, nil, err
@@ -100,18 +104,14 @@ func ReadPrivKey(filepath string) ([]byte, error) {
 }
 
 func keyringFilepath() string {
-	base := ""
+	base := filepath.Join("$HOME", ".bindle")
 
-	xdg, exists := os.LookupEnv("XDG_CONFIG")
-	if exists {
-		base = filepath.Join(xdg, "bindle")
-	} else {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			base = filepath.Join("$HOME", ".bindle")
-		} else {
-			base = filepath.Join(home, ".bindle")
-		}
+	if home, err := os.UserHomeDir(); err == nil {
+		base = filepath.Join(home, ".bindle")
+	}
+
+	if config, err := os.UserConfigDir(); err == nil {
+		base = filepath.Join(config, "bindle")
 	}
 
 	return filepath.Join(base, "keyring.toml")

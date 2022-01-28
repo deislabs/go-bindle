@@ -73,11 +73,12 @@ func newTestController(t *testing.T) testController {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(ctx, serverBinaryPath,
-		"-d",
-		tempdir,
-		"-i",
-		address,
-		"-c", cert, "-k", key)
+		"-d", tempdir,
+		"-i", address,
+		"-c", cert,
+		"-k", key,
+		"--unauthenticated")
+
 	t.Cleanup(cancel)
 
 	cmd.Stderr = os.Stderr

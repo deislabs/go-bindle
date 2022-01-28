@@ -96,6 +96,17 @@ type SignatureKey struct {
 	LabelSignature string   `toml:"labelSignature"`
 }
 
+// IncludesRole returns true if the SignatureKey includes the given role
+func (s *SignatureKey) IncludesRole(role string) bool {
+	for _, r := range s.Roles {
+		if r == role {
+			return true
+		}
+	}
+
+	return false
+}
+
 // InvoiceCreateResponse is returned by a Bindle server when creating an invoice. It contains the
 // created invoice and an optional slice of labels indicating which parcels are missing in storage
 type InvoiceCreateResponse struct {
