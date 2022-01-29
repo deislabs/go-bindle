@@ -25,6 +25,9 @@ var ValidRoles = map[string]bool{
 var ErrInvalidRole = errors.New("invalid role")
 var ErrAuthorNotExist = errors.New("author does not exist on invoice")
 var ErrSignatureKeyRoleMismatch = errors.New("signature key is not valid for the provided role")
+var ErrInvalidSignatureKey = errors.New("signature key is not valid")
+var ErrInvalidSignature = errors.New("signature is not valid")
+var ErrMissingSignatureKey = errors.New("missing signature key")
 
 // Cleartext format:
 // Matt Butcher <matt.butcher@example.com>
@@ -58,7 +61,7 @@ func (i *Invoice) GenerateSignature(author, role string, sigKey *SignatureKey, p
 
 	timestamp := time.Now()
 
-	cleartext := i.generateCleartext(role, timestamp)
+	cleartext := i.generateCleartext(author, role)
 
 	sig := ed25519.Sign(privKey, []byte(cleartext))
 
@@ -84,6 +87,62 @@ func (i *Invoice) GenerateSignature(author, role string, sigKey *SignatureKey, p
 	return nil
 }
 
+func (i *Invoice) VerifySignatures(sigKeys []SignatureKey) error {
+	// map of author to key
+	keys := map[string]*SignatureKey{}
+
+	// first validate each key's signature and add them to a map
+	for i := range sigKeys {
+		key := sigKeys[i]
+
+		keyBytes, err := base64.StdEncoding.DecodeString(key.Key)
+		if err != nil {
+			return err
+		}
+
+		labelSigBytes, err := base64.StdEncoding.DecodeString(key.LabelSignature)
+		if err != nil {
+			return err
+		}
+
+		if valid := ed25519.Verify(keyBytes, []byte(key.Label), labelSigBytes); !valid {
+			return ErrInvalidSignatureKey
+		}
+
+		keys[key.Label] = &key
+	}
+
+	// then validate each of the invoice's signatures using the keys we have available
+	for _, s := range i.Signature {
+		key := keys[s.By]
+		if key == nil {
+			return ErrMissingSignatureKey
+		}
+
+		if !key.IncludesRole(s.Role) {
+			return ErrSignatureKeyRoleMismatch
+		}
+
+		keyBytes, err := base64.StdEncoding.DecodeString(key.Key)
+		if err != nil {
+			return err
+		}
+
+		sigBytes, err := base64.StdEncoding.DecodeString(s.Signature)
+		if err != nil {
+			return err
+		}
+
+		cleartext := []byte(i.generateCleartext(key.Label, s.Role))
+
+		if valid := ed25519.Verify(keyBytes, cleartext, sigBytes); !valid {
+			return ErrInvalidSignature
+		}
+	}
+
+	return nil
+}
+
 // IsAuthoredBy returns true if the provided author is in the
 // list of authors for this invoice
 func (i *Invoice) IsAuthoredBy(author string) bool {
@@ -96,10 +155,10 @@ func (i *Invoice) IsAuthoredBy(author string) bool {
 	return false
 }
 
-func (i *Invoice) generateCleartext(role string, timestamp time.Time) string {
+func (i *Invoice) generateCleartext(author, role string) string {
 	// metadata
 	cleartextParts := []string{
-		i.Bindle.Authors[0],
+		author,
 		i.Bindle.Name,
 		i.Bindle.Version,
 		role,

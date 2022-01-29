@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/big"
@@ -20,10 +21,14 @@ import (
 	"time"
 
 	"github.com/deislabs/go-bindle/client"
+	"github.com/deislabs/go-bindle/keyring"
 	"github.com/deislabs/go-bindle/types"
 
 	"github.com/pelletier/go-toml"
 )
+
+const testAuthor = `Testy McTestface <"testy@test.face">`
+const testAuthor2 = `Elon Testla <"elon@testla.com">`
 
 var key string
 var cert string
@@ -333,5 +338,127 @@ func TestMissing(t *testing.T) {
 
 	if len(missing.Missing) != len(inv.Parcel) {
 		t.Fatalf("Expected to get %d missing parcels, got %d", len(inv.Parcel), len(missing.Missing))
+	}
+}
+
+func TestSignVerify(t *testing.T) {
+	sigKey, privKey, err := keyring.GenerateSignatureKey(testAuthor, types.RoleCreator)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	data := []byte("something very important")
+
+	importantParcel := types.NewParcel("importantfile", "application/important", data)
+
+	invoice := &types.Invoice{
+		BindleVersion: "1.0.0",
+		Bindle: types.BindleSpec{
+			Name:    "importantproj",
+			Version: "0.1.0",
+			Authors: []string{
+				testAuthor,
+			},
+		},
+		Parcel: []types.Parcel{
+			importantParcel,
+		},
+	}
+
+	if err := invoice.GenerateSignature(testAuthor, types.RoleCreator, sigKey, privKey); err != nil {
+		t.Error(err)
+		return
+	}
+
+	if err := invoice.VerifySignatures([]types.SignatureKey{*sigKey}); err != nil {
+		t.Error(err)
+		return
+	}
+}
+
+func TestSignVerifyWrongKey(t *testing.T) {
+	sigKey, privKey, err := keyring.GenerateSignatureKey(testAuthor, types.RoleCreator)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	data := []byte("something very important")
+
+	importantParcel := types.NewParcel("importantfile", "application/important", data)
+
+	invoice := &types.Invoice{
+		BindleVersion: "1.0.0",
+		Bindle: types.BindleSpec{
+			Name:    "importantproj",
+			Version: "0.1.0",
+			Authors: []string{
+				testAuthor,
+			},
+		},
+		Parcel: []types.Parcel{
+			importantParcel,
+		},
+	}
+
+	if err := invoice.GenerateSignature(testAuthor, types.RoleCreator, sigKey, privKey); err != nil {
+		t.Error(err)
+		return
+	}
+
+	// a second key with same author to ensure verification fails with something "spoofed"
+	sigKey2, _, err := keyring.GenerateSignatureKey(testAuthor, types.RoleCreator)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	if err := invoice.VerifySignatures([]types.SignatureKey{*sigKey2}); err == nil {
+		t.Error(errors.New("did not get signing error, should have"))
+		return
+	}
+}
+
+func TestSignVerifyMissingKey(t *testing.T) {
+	sigKey, privKey, err := keyring.GenerateSignatureKey(testAuthor, types.RoleCreator)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	data := []byte("something very important")
+
+	importantParcel := types.NewParcel("importantfile", "application/important", data)
+
+	invoice := &types.Invoice{
+		BindleVersion: "1.0.0",
+		Bindle: types.BindleSpec{
+			Name:    "importantproj",
+			Version: "0.1.0",
+			Authors: []string{
+				testAuthor,
+			},
+		},
+		Parcel: []types.Parcel{
+			importantParcel,
+		},
+	}
+
+	if err := invoice.GenerateSignature(testAuthor, types.RoleCreator, sigKey, privKey); err != nil {
+		t.Error(err)
+		return
+	}
+
+	// a key with a different author to ensure verification fails when the correct author's key isn't present
+	sigKey2, _, err := keyring.GenerateSignatureKey(testAuthor2, types.RoleCreator)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	if err := invoice.VerifySignatures([]types.SignatureKey{*sigKey2}); err == nil {
+		t.Error(errors.New("did not get signing error, should have"))
+		return
 	}
 }
