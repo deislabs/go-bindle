@@ -17,6 +17,7 @@ type Invoice struct {
 	Yanked        *bool             `toml:"yanked"`
 	Bindle        BindleSpec        `toml:"bindle"`
 	Annotations   map[string]string `toml:"annotations,omitempty"`
+	Signature     []Signature       `toml:"signature,omitempty"`
 	Parcel        []Parcel          `toml:"parcel,omitempty"`
 	Group         []Group           `toml:"group,omitempty"`
 }
@@ -69,6 +70,41 @@ type Group struct {
 	Name        string  `toml:"name"`
 	Required    *bool   `toml:"required"`
 	SatisfiedBy *string `toml:"satisfiedBy"`
+}
+
+// Signature is a (default Ed25519) signature of the bindle based on the spec:
+// https://github.com/deislabs/bindle/blob/main/docs/signing-spec.md
+type Signature struct {
+	By        string `toml:"by"`
+	Signature string `toml:"signature"`
+	Key       string `toml:"key"`
+	Role      string `toml:"role"`
+	At        int64  `toml:"at"`
+}
+
+// Keyring represents a list of available public keys for signature validation
+type Keyring struct {
+	Version string         `toml:"version"`
+	Key     []SignatureKey `toml:"key"`
+}
+
+// SignatureKey is a representation of a public key used to validate signatures
+type SignatureKey struct {
+	Label          string   `toml:"label"`
+	Roles          []string `toml:"roles"`
+	Key            string   `toml:"key"`
+	LabelSignature string   `toml:"labelSignature"`
+}
+
+// IncludesRole returns true if the SignatureKey includes the given role
+func (s *SignatureKey) IncludesRole(role string) bool {
+	for _, r := range s.Roles {
+		if r == role {
+			return true
+		}
+	}
+
+	return false
 }
 
 // InvoiceCreateResponse is returned by a Bindle server when creating an invoice. It contains the

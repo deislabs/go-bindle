@@ -35,11 +35,15 @@ type Client struct {
 // https://bindle.example.com). The tlsConfig parameter is optional and can be used if you have any
 // specific TLS configuration options such as internally signed certificates
 func New(baseURL string, tlsConfig *tls.Config) (*Client, error) {
-	httpClient := http.Client{
-		Transport: &http2.Transport{
-			AllowHTTP:       true,
-			TLSClientConfig: tlsConfig,
-		},
+	httpClient := http.Client{}
+
+	if tlsConfig != nil {
+		httpClient = http.Client{
+			Transport: &http2.Transport{
+				AllowHTTP:       true,
+				TLSClientConfig: tlsConfig,
+			},
+		}
 	}
 
 	// Strip any trailing slashes first
