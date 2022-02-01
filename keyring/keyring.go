@@ -11,7 +11,7 @@ import (
 	"github.com/pelletier/go-toml"
 )
 
-// GenerateSigningKey generates a keypair for signing Bindle invoices
+// GenerateSignatureKey generates a keypair for signing Bindle invoices
 // The return types are the public key (wrapped in a SignatureKey), the private key, and any error
 func GenerateSignatureKey(author, role string) (*types.SignatureKey, []byte, error) {
 	if exists, val := types.ValidRoles[role]; !exists || !val {

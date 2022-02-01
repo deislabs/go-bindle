@@ -78,10 +78,10 @@ func newTestController(t *testing.T) testController {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(ctx, serverBinaryPath,
-		"-d", tempdir,
-		"-i", address,
 		"-c", cert,
+		"-d", tempdir,
 		"-k", key,
+		"-i", address,
 		"--unauthenticated")
 
 	t.Cleanup(cancel)
@@ -371,7 +371,7 @@ func TestSignVerify(t *testing.T) {
 		return
 	}
 
-	if err := invoice.VerifySignatures([]types.SignatureKey{*sigKey}); err != nil {
+	if err := invoice.VerifySignatures([]types.SignatureKey{*sigKey}, types.VerificationExhaustive); err != nil {
 		t.Error(err)
 		return
 	}
@@ -414,7 +414,7 @@ func TestSignVerifyWrongKey(t *testing.T) {
 		return
 	}
 
-	if err := invoice.VerifySignatures([]types.SignatureKey{*sigKey2}); err == nil {
+	if err := invoice.VerifySignatures([]types.SignatureKey{*sigKey2}, types.VerificationExhaustive); err == nil {
 		t.Error(errors.New("did not get signing error, should have"))
 		return
 	}
@@ -457,7 +457,7 @@ func TestSignVerifyMissingKey(t *testing.T) {
 		return
 	}
 
-	if err := invoice.VerifySignatures([]types.SignatureKey{*sigKey2}); err == nil {
+	if err := invoice.VerifySignatures([]types.SignatureKey{*sigKey2}, types.VerificationExhaustive); err == nil {
 		t.Error(errors.New("did not get signing error, should have"))
 		return
 	}
